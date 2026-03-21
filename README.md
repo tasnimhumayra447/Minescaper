@@ -2,7 +2,7 @@
 
 A Minesweeper-inspired variant built in Python, with an interactive browser demo deployed via GitHub Pages.
 
-🎮 **[Play it live here](https://tasnimhumayra447.github.io/Minesweeper)**
+🎮 **[Play it live here] (https://tasnimhumayra447.github.io/Minescaper/index.html)**
 
 ---
 
