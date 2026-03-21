@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minesweeper</title>
+<style>
+  body { background: #111; color: #eee; font-family: monospace; display: flex; flex-direction: column; align-items: center; padding: 2rem; }
+  h1 { color: #9f9; margin-bottom: 0.25rem; }
+  p { color: #888; font-size: 13px; margin-bottom: 1.5rem; }
+  .controls { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; justify-content: center; }
+  select, input, button { background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 5px 10px; font-family: monospace; font-size: 13px; cursor: pointer; }
+  button:hover { background: #333; }
+  #status { margin-bottom: 1rem; font-size: 13px; color: #aaa; min-height: 20px; }
+  table { border-collapse: collapse; margin-bottom: 1rem; }
+  td { width: 40px; height: 40px; text-align: center; border: 1px solid #333; font-size: 14px; cursor: pointer; }
+  td.hidden { background: #222; color: #444; }
+  td.hidden:hover { background: #2a2a2a; }
+  td.revealed { background: #1a1a1a; color: #888; }
+  td.player { background: #1a3a1a; color: #9f9; border-color: #9f9; }
+  td.flagged { background: #2a2000; color: #fa0; border-color: #fa0; }
+  td.exit { background: #001a2a; color: #4af; border-color: #4af; }
+  td.dead { background: #2a0000; color: #f44; border-color: #f44; }
+  td.n1 { color: #4af; } td.n2 { color: #4f4; } td.n3 { color: #f44; }
+  td.n4 { color: #a4f; } td.n5, td.n6, td.n7, td.n8 { color: #fa0; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 36px); gap: 4px; margin-bottom: 0.75rem; }
+  .dpad button { width: 36px; height: 36px; padding: 0; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 0.5rem; }
+</style>
+</head>
+<body>
+
+<h1>MINESWEEPER</h1>
+<p>Get from top-left to bottom-right without hitting a mine.</p>
+
+<div class="controls">
+  <select id="size">
+    <option value="5">5×5</option>
+    <option value="7">7×7</option>
+    <option value="9">9×9</option>
+  </select>
+  <input type="number" id="mines" value="5" min="1" max="20" style="width:50px">
+  <button onclick="newGame()">New Game</button>
+  <button onclick="revealAll()">Reveal All</button>
+</div>
+
+<div id="status">Click New Game to start.</div>
+<table id="board"></table>
+
+<div class="dpad">
+  <button onclick="move('WA')">↖</button><button onclick="move('W')">↑</button><button onclick="move('WD')">↗</button>
+  <button onclick="move('A')">←</button><button style="opacity:0">·</button><button onclick="move('D')">→</button>
+  <button onclick="move('SA')">↙</button><button onclick="move('S')">↓</button><button onclick="move('SD')">↘</button>
+</div>
+
+<div class="row">
+  <span style="font-size:13px;color:#888">flag mode:</span>
+  <button id="flag-btn" onclick="flagMode=!flagMode;updateFlagBtn()">OFF</button>
+</div>
+
+<div class="row">
+  <input id="txt" maxlength="6" placeholder="e.g. WDF" style="width:80px">
+  <button onclick="submitText()">Go</button>
+</div>
+
+<script>
+// game state variables
+let gs, board, pos, visited, flagged, over, flagMode = false;
+
+// converts [x, y] to a string key for use in Sets (JS Sets can't store arrays)
+const k = ([x, y]) => x + ',' + y;
+
+
+// ---------------------------------------------------------------------------
+// Task 1: Mine board creation
+// ---------------------------------------------------------------------------
+
+function neighbouringMines(x, y, b) {
+    // initialise number of mines
+    let count = 0;
+
+    // Relative positions of 8 possible neighbours
+    const directions = [[-1, -1], [-1, 0], [-1, 1],
+                        [0, -1],            [0, 1],
+                        [1, -1],  [1, 0],  [1, 1]];
+
+    // check if each neighbour is a mine
+    for (const [dx, dy] of directions) {
+        const new_x = x + dx;
+        const new_y = y + dy;
+
+        // Ensure neighbour is within bounds
+        if ((0 <= new_x && new_x < gs) && (0 <= new_y && new_y < gs)) {
+            if (b[new_x][new_y] === -1) {
+                count += 1;
+            }
+        }
+    }
+    return count;
+}
+
+function createBoard(mine_positions) {
+    // initialise the board with all zeros
+    const board = [];
+    for (let i = 0; i < gs; i++) {
+        board.push(Array(gs).fill(0));
+    }
+
+    // place mines
+    for (const [x, y] of mine_positions) {
+        board[x][y] = -1;
+    }
+
+    // fill every non-mine cell with its adjacent mine count
+    for (let x = 0; x < gs; x++) {
+        for (let y = 0; y < gs; y++) {
+            if (board[x][y] !== -1) {
+                board[x][y] = neighbouringMines(x, y, board);
+            }
+        }
+    }
+    return board;
+}
+
+
+// ---------------------------------------------------------------------------
+// Task 2: Input processing
+// ---------------------------------------------------------------------------
+
+function processInput(move_str) {
+    const max_index = gs - 1;  // Largest valid index on the board
+    let new_pos = [...pos];    // Start with current position
+
+    // Convert to uppercase and take up to the first 3 characters
+    const temp_str = move_str.slice(0, 3).toUpperCase();
+
+    // Remove invalid characters first
+    let cleaned = "";
+    for (const char of temp_str) {
+        if ("WASDF".includes(char)) {
+            cleaned += char;
+        }
+    }
+
+    // Flag is only valid as the final character
+    const flag = cleaned.length >= 2 && cleaned[cleaned.length - 1] === 'F';
+
+    // Build directional move from everything before the trailing F
+    let processed_move = "";
+    for (const char of cleaned) {
+        if ("WASD".includes(char)) {
+            processed_move += char;
+        }
+    }
+
+    // Apply the move to new_pos
+    let steps_taken = 0;
+    for (const char of processed_move) {
+        // Must be directional move so stop after 2 steps
+        if (steps_taken < 2) {
+            if (char === 'W') {
+                new_pos[0] -= 1;
+                steps_taken += 1;
+            } else if (char === 'S') {
+                new_pos[0] += 1;
+                steps_taken += 1;
+            } else if (char === 'A') {
+                new_pos[1] -= 1;
+                steps_taken += 1;
+            } else if (char === 'D') {
+                new_pos[1] += 1;
+                steps_taken += 1;
+            }
+        }
+    }
+
+    // if out-of-bounds move, reset new_pos
+    if (!(0 <= new_pos[0] && new_pos[0] <= max_index) || !(0 <= new_pos[1] && new_pos[1] <= max_index)) {
+        new_pos = [...pos];
+        return [new_pos[0], new_pos[1], false];
+    }
+
+    // Cannot flag the start or end position
+    if ((new_pos[0] === 0 && new_pos[1] === 0) || (new_pos[0] === max_index && new_pos[1] === max_index)) {
+        return [new_pos[0], new_pos[1], false];
+    }
+
+    return [new_pos[0], new_pos[1], flag];
+}
+
+
+// ---------------------------------------------------------------------------
+// Task 3: Revealing connected zero cells
+// ---------------------------------------------------------------------------
+
+function revealZeros(current_pos) {
+    // iterative stack instead of recursion (JS has a lower call stack limit)
+    const stack = [current_pos];
+
+    while (stack.length) {
+        const [x, y] = stack.pop();
+
+        // skip if already visited
+        if (visited.has(k([x, y]))) {
+            continue;
+        }
+
+        // mark current cell as visited
+        visited.add(k([x, y]));
+
+        // cell has a non-zero count so stop cascading
+        if (board[x][y] !== 0) {
+            continue;
+        }
+
+        // Relative positions of 8 possible neighbours
+        const directions = [[-1, -1], [-1, 0], [-1, 1],
+                            [0, -1],            [0, 1],
+                            [1, -1],  [1, 0],  [1, 1]];
+
+        for (const [dx, dy] of directions) {
+            const new_x = x + dx;
+            const new_y = y + dy;
+
+            // check if neighbour is within bounds and not yet visited
+            if ((0 <= new_x && new_x < gs) && (0 <= new_y && new_y < gs)) {
+                if (!visited.has(k([new_x, new_y]))) {
+                    stack.push([new_x, new_y]);
+                }
+            }
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Task 4: Game board rendering
+// ---------------------------------------------------------------------------
+
+function render(show_all = false) {
+    const exit_pos = [gs - 1, gs - 1];
+
+    // initialise game board html
+    let html = '';
+
+    // game not over
+    if (!show_all) {
+        for (let x = 0; x < gs; x++) {
+            html += '<tr>';
+            for (let y = 0; y < gs; y++) {
+                const val = board[x][y];
+                let cls = '', txt = '';
+
+                // current cell
+                if (pos[0] === x && pos[1] === y) {
+                    cls = 'player';
+                    txt = (x === exit_pos[0] && y === exit_pos[1]) ? 'E' : (val === 0 ? '·' : val);
+
+                // cell visited before
+                } else if (visited.has(k([x, y]))) {
+                    cls = `revealed n${val}`;
+                    txt = val === 0 ? '·' : val;
+
+                // flagged cell
+                } else if (flagged.has(k([x, y]))) {
+                    cls = 'flagged';
+                    txt = 'F';
+
+                // exit cell
+                } else if (x === exit_pos[0] && y === exit_pos[1]) {
+                    cls = 'exit';
+                    txt = 'E';
+
+                // hidden unrevealed cell
+                } else {
+                    cls = 'hidden';
+                    txt = '·';
+                }
+
+                html += `<td class="${cls}" onclick="handleClick(${x},${y},false)" oncontextmenu="handleClick(${x},${y},true);return false">${txt}</td>`;
+            }
+            html += '</tr>';
+        }
+
+    // game over
+    } else {
+        for (let x = 0; x < gs; x++) {
+            html += '<tr>';
+            for (let y = 0; y < gs; y++) {
+                const val = board[x][y];
+                const is_mine = val === -1;
+                let cls = '', txt = '';
+
+                // current cell
+                if (pos[0] === x && pos[1] === y) {
+                    // current position is exit cell
+                    if (x === exit_pos[0] && y === exit_pos[1]) {
+                        cls = 'exit'; txt = 'E';
+                    // current position is a mine
+                    } else {
+                        cls = 'dead'; txt = '✕';
+                    }
+
+                // exit cell
+                } else if (x === exit_pos[0] && y === exit_pos[1]) {
+                    cls = 'exit'; txt = 'E';
+
+                // cell is not a mine
+                } else if (!is_mine) {
+                    cls = `revealed n${val}`; txt = val === 0 ? '·' : val;
+
+                // cell is a mine
+                } else {
+                    cls = 'revealed'; txt = '✕';
+                }
+
+                html += `<td class="${cls}" onclick="handleClick(${x},${y},false)" oncontextmenu="handleClick(${x},${y},true);return false">${txt}</td>`;
+            }
+            html += '</tr>';
+        }
+    }
+
+    document.getElementById('board').innerHTML = html;
+}
+
+
+// ---------------------------------------------------------------------------
+// Game helpers
+// ---------------------------------------------------------------------------
+
+function move(str) {
+    if (over) return;
+
+    const [nx, ny, fl] = processInput(str + (flagMode ? 'F' : ''));
+    const nk = k([nx, ny]);
+
+    if (fl) {
+        // toggle flag on/off
+        if (flagged.has(nk)) {
+            flagged.delete(nk);
+        } else {
+            flagged.add(nk);
+        }
+        setStatus(`Flag toggled at (${nx}, ${ny})`);
+    } else {
+        // ignore if position didn't change (out of bounds move)
+        if (nx === pos[0] && ny === pos[1]) return;
+        pos = [nx, ny];
+
+        // player hit a mine
+        if (board[nx][ny] === -1) {
+            over = true;
+            setStatus('💥 Mine hit! Game over.');
+            render(true);
+            return;
+        }
+
+        // player reached the exit
+        if (nx === gs - 1 && ny === gs - 1) {
+            over = true;
+            setStatus('🎉 You escaped!');
+
+        // safe cell — reveal zeros
+        } else {
+            revealZeros([nx, ny]);
+            setStatus(`Moved to (${nx}, ${ny})`);
+        }
+    }
+    render();
+}
+
+function newGame() {
+    gs = parseInt(document.getElementById('size').value);
+    const mc = Math.min(parseInt(document.getElementById('mines').value) || 5, Math.floor(gs * gs * 0.35));
+
+    // generate random mine positions avoiding start and exit
+    const avoid = new Set(['0,0', `${gs - 1},${gs - 1}`]);
+    const mine_positions = [];
+    while (mine_positions.length < mc) {
+        const x = Math.floor(Math.random() * gs);
+        const y = Math.floor(Math.random() * gs);
+        if (!avoid.has(`${x},${y}`) && !mine_positions.some(m => m[0] === x && m[1] === y)) {
+            mine_positions.push([x, y]);
+        }
+    }
+
+    // initialise game state
+    board = createBoard(mine_positions);
+    pos = [0, 0];
+    visited = new Set();
+    flagged = new Set();
+    over = false;
+
+    // reveal starting cell
+    revealZeros([0, 0]);
+    setStatus('Use WASD keys, d-pad, or click a cell.');
+    render();
+}
+
+function revealAll() {
+    if (!board) return;
+    render(true);
+    over = true;
+    setStatus('All revealed.');
+}
+
+function setStatus(msg) {
+    document.getElementById('status').textContent = msg;
+}
+
+function submitText() {
+    const v = document.getElementById('txt').value;
+    if (v) {
+        move(v);
+        document.getElementById('txt').value = '';
+    }
+}
+
+function updateFlagBtn() {
+    document.getElementById('flag-btn').textContent = flagMode ? 'ON' : 'OFF';
+    document.getElementById('flag-btn').style.color = flagMode ? '#fa0' : '#eee';
+}
+
+function handleClick(tx, ty, isFlag) {
+    if (over) return;
+    const dx = tx - pos[0];
+    const dy = ty - pos[1];
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) return;
+
+    // build direction string from position difference
+    let s = '';
+    if (dx < 0) s += 'W'.repeat(-dx); else s += 'S'.repeat(dx);
+    if (dy < 0) s += 'A'.repeat(-dy); else s += 'D'.repeat(dy);
+    if (s) move(s + (isFlag || flagMode ? 'F' : ''));
+}
+
+// keyboard controls
+document.addEventListener('keydown', e => {
+    if (document.activeElement === document.getElementById('txt')) return;
+    if (e.key === 'f' || e.key === 'F') { flagMode = !flagMode; updateFlagBtn(); return; }
+    const key = e.key.toUpperCase();
+    if ('WASD'.includes(key)) move(key + (flagMode ? 'F' : ''));
+});
+
+document.getElementById('txt').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitText();
+});
+
+newGame();
+</script>
+</body>
+</html>
