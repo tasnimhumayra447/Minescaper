@@ -49,32 +49,6 @@ The project was built from scratch in Python, implementing the full game logic a
 
 ---
 
-## Implementation
-
-### Task 1 — Mine Board Generation (`create_mine_board`)
-
-Creates the underlying game board as a `grid_size x grid_size` 2D list. Mines are placed at the given positions and represented as `-1`. 
-Every safe cell is then filled with an integer from `0` to `8` indicating how many of its up-to-8 neighbouring cells contain mines.
-
-Mine positions are stored in a **set** for O(1) membership checks, and a `ValueError` is raised if a mine is placed on the start or exit cell.
-
-### Task 2 — Input Processing (`process_input`)
-
-Parses a move string from the player and returns the new position and whether a flag was placed. The parsing follows these rules in order:
-
-1. Case-insensitive — converted to uppercase
-2. Only the first 3 characters are considered
-3. Invalid characters (anything other than `W`, `A`, `S`, `D`, `F`) are stripped
-4. `F` is only valid as the **final character** — if it appears mid-string (e.g. `WFW`) it is ignored and the move is treated as directional only
-5. Direction steps are order-insensitive and capped at 2
-6. Out-of-bounds moves are cancelled and the player stays in place
-7. The start and exit cells cannot be flagged
-
-### Task 3 — Zero Cell Cascading (`reveal_zeros`)
-
-When the player steps on a cell with `0` adjacent mines, it triggers an **automatic cascade reveal** of all connected empty cells and their neighbours. 
-This is the same mechanic as classic Minesweeper's flood-fill behaviour.
-
 **How the cascade works:**
 
 > Imagine the board as a landscape. A `0` cell means there are no mines anywhere nearby — so it's completely safe to automatically reveal all 8 of its neighbours.
@@ -89,21 +63,6 @@ Start at current cell
 ```
 
 The result is that a single step into an open area can reveal a large connected region instantly, rather than requiring the player to manually visit every cell.
-
-### Task 4 — Game Board Rendering (`create_game_board`)
-
-Constructs the visual game board as a 2D list of strings based on the current game state. Each cell is rendered according to this priority order:
-
-| Symbol | Meaning |
-|--------|---------|
-| `[x]` | Player's current position (e.g. `[2]`, `[0]`) |
-| `x` | Revealed safe cell showing adjacent mine count |
-| `F` | Flagged cell |
-| `E` | Exit cell |
-| `.` | Hidden unrevealed cell |
-| `*` | Mine (only shown when `show_all=True` at game end) |
-
-When `show_all=True` (game over), the full board is revealed including all mine locations.
 
 ---
 
