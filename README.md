@@ -69,7 +69,7 @@ The result is that a single step into an open area can reveal a large connected 
 ## Running Locally
 
 ```bash
-python minesweeper.py
+python minescaper.py
 ```
 
 Or open `index.html` directly in any browser — no server required.
